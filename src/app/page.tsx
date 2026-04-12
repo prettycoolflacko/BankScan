@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { UploadZone } from '@/components/UploadZone';
 import { TransactionList } from '@/components/TransactionList';
+import { StatementList } from '@/components/StatementList';
 import { Wallet } from 'lucide-react';
 
 export default function Home() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [selectedStatementId, setSelectedStatementId] = useState<string | null>(null);
 
-  const handleUploadSuccess = () => {
-    setRefreshTrigger(prev => prev + 1);
-  };
+  const refresh = () => setRefreshTrigger(prev => prev + 1);
 
   return (
     <main className="container max-w-5xl mx-auto py-8 px-4 space-y-8">
@@ -31,14 +31,30 @@ export default function Home() {
             <p className="text-sm text-muted-foreground mb-4">
               Drop your Bank Mandiri PDF e-statement below to automatically extract and save the transactions locally.
             </p>
-            <UploadZone onUploadSuccess={handleUploadSuccess} />
+            <UploadZone onUploadSuccess={refresh} />
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold mb-4">Uploaded Statements</h2>
+            <StatementList
+              refreshTrigger={refreshTrigger}
+              onStatementsChanged={refresh}
+              selectedStatementId={selectedStatementId}
+              onSelectStatement={setSelectedStatementId}
+            />
           </div>
         </div>
 
         <div className="md:col-span-2 space-y-4">
           <div>
-            <h2 className="text-lg font-semibold mb-4">Recent Transactions</h2>
-            <TransactionList refreshTrigger={refreshTrigger} />
+            <h2 className="text-lg font-semibold mb-4">
+              {selectedStatementId ? 'Statement Transactions' : 'All Transactions'}
+            </h2>
+            <TransactionList
+              refreshTrigger={refreshTrigger}
+              selectedStatementId={selectedStatementId}
+              onDataChanged={refresh}
+            />
           </div>
         </div>
       </div>

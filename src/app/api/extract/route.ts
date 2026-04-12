@@ -5,13 +5,11 @@ import PDFParser from 'pdf2json';
 
 /**
  * Safely decode URI-encoded text from pdf2json.
- * Falls back to the original string if decoding fails.
  */
 function safeDecode(text: string): string {
   try {
     return decodeURIComponent(text);
   } catch {
-    // Replace common URI-encoded characters manually
     return text
       .replace(/%20/g, ' ')
       .replace(/%2C/g, ',')
@@ -41,9 +39,6 @@ async function parsePDFText(buffer: Buffer): Promise<string> {
   });
 }
 
-/**
- * Parse DD-MMM-YY (e.g. "22-Feb-26") to a YYYY-MM-DD ISO date string.
- */
 function parseDate(dateStr: string): string {
   const months: Record<string, string> = {
     Jan: '01', Feb: '02', Mar: '03', Apr: '04',
@@ -57,7 +52,6 @@ function parseDate(dateStr: string): string {
   const day = parts[0].padStart(2, '0');
   const month = months[parts[1]] || '01';
   let year = parseInt(parts[2], 10);
-  // Convert 2-digit year: 00-49 -> 2000s, 50-99 -> 1900s
   year = year < 50 ? 2000 + year : 1900 + year;
 
   return `${year}-${month}-${day}`;
@@ -81,79 +75,109 @@ export async function POST(req: Request) {
 
     // Extract raw text
     const rawText = await parsePDFText(buffer);
-    
-    // Decode the text safely
     const text = safeDecode(rawText);
 
-    // DEBUG: Log the first 3000 chars so we can see the actual structure
-    console.log('=== PDF RAW TEXT (first 3000 chars) ===');
-    console.log(text.substring(0, 3000));
-    console.log('=== END PDF TEXT ===');
+    console.log(`Total lines: ${text.split(/\r?\n/).length}`);
 
+    // CLASSIFICATION LOGIC
+    let classifier = 'UNKNOWN';
+    const textUpper = text.toUpperCase();
+    
+    if (textUpper.includes('LEMBAR TAGIHAN KARTU KREDIT') && textUpper.includes('MANDIRI')) {
+      classifier = 'MANDIRI_CREDIT_CARD';
+    } 
+    // Add additional bank classifiers here when needed:
+    // else if (textUpper.includes('BCA') && textUpper.includes('E-STATEMENT')) {
+    //   classifier = 'BCA_STATEMENT';
+    // }
+
+    // 1. Insert into statements table first
+    const { data: statementData, error: statementError } = await supabaseServer
+      .from('statements')
+      .insert({
+        filename: file.name,
+        classifier: classifier
+      })
+      .select('id')
+      .single();
+
+    if (statementError || !statementData) {
+      console.error('Failed to create statement record:', statementError);
+      return NextResponse.json({ error: 'Failed to create statement record' }, { status: 500 });
+    }
+
+    const statementId = statementData.id;
     const transactions = [];
-
-    // Split by various newline patterns pdf2json may use
     const lines = text.split(/\r?\n/);
 
-    console.log(`Total lines: ${lines.length}`);
+    if (classifier === 'MANDIRI_CREDIT_CARD') {
+      const lineRegex = /(\d{2}-[A-Za-z]{3}-\d{2})\s+(\d{2}-[A-Za-z]{3}-\d{2})\s+(.+?)\s+([\d,.]+\.\d{2})\s*(CR)?\s*$/;
 
-    // Regex patterns for Mandiri Credit Card Statement
-    // Format: "22-Feb-26  22-Feb-26  POWER CASH SEPTEMBER 2025 093006  1,166,666.00"
-    // With optional CR at the end for credit/income entries
-    // The regex is flexible with whitespace between columns
-    const lineRegex = /(\d{2}-[A-Za-z]{3}-\d{2})\s+(\d{2}-[A-Za-z]{3}-\d{2})\s+(.+?)\s+([\d,.]+\.\d{2})\s*(CR)?\s*$/;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+        const match = line.match(lineRegex);
+        if (match) {
+          const txnDate = match[1];
+          const description = match[3].trim();
+          const amountStr = match[4];
+          const isCr = !!match[5];
 
-      const match = line.match(lineRegex);
-      if (match) {
-        const txnDate = match[1];
-        const description = match[3].trim();
-        const amountStr = match[4];
-        const isCr = !!match[5];
+          const amount = parseFloat(amountStr.replace(/,/g, ''));
+          const type = isCr ? 'INCOME' : 'EXPENSE';
+          const isoDate = parseDate(txnDate);
 
-        const amount = parseFloat(amountStr.replace(/,/g, ''));
-        const type = isCr ? 'INCOME' : 'EXPENSE';
-        const isoDate = parseDate(txnDate);
+          if (amount === 0) continue;
 
-        // Skip zero-amount entries (e.g. BUNGA CICILAN = 0.00)
-        if (amount === 0) continue;
-
-        console.log(`  MATCH [${i}]: ${txnDate} | ${description} | ${amount} | ${type}`);
-
-        transactions.push({
-          date: isoDate,
-          amount,
-          currency: 'IDR',
-          bank: 'Mandiri',
-          type,
-          description
-        });
+          transactions.push({
+            date: isoDate,
+            amount,
+            currency: 'IDR',
+            bank: 'Mandiri',
+            type,
+            description,
+            statement_id: statementId // Link to the statement!
+          });
+        }
       }
+    } else {
+      // If we don't recognize it, we delete the statement record we just created
+      await supabaseServer.from('statements').delete().eq('id', statementId);
+      return NextResponse.json({ 
+        error: 'Unsupported PDF format. Currently only Mandiri Credit Card e-statements are supported.' 
+      }, { status: 400 });
     }
 
     console.log(`Found ${transactions.length} transactions`);
 
     if (transactions.length === 0) {
+      // Clean up statement record if empty
+      await supabaseServer.from('statements').delete().eq('id', statementId);
       return NextResponse.json({ 
-        error: 'Could not detect any transactions in this PDF. Check the server console for raw text output to debug.' 
+        error: 'Could not detect any transactions in this PDF. It was recognized but format may have changed.' 
       }, { status: 400 });
     }
 
-    // Insert into Supabase
-    const { data: dbData, error } = await supabaseServer
+    // 2. Insert mapped transactions into Supabase
+    const { error: txError } = await supabaseServer
       .from('transactions')
-      .insert(transactions)
-      .select();
+      .insert(transactions);
 
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json({ error: 'Failed to insert to database: ' + error.message }, { status: 500 });
+    if (txError) {
+      console.error('Supabase error inserting tx:', txError);
+      // Clean up statement record
+      await supabaseServer.from('statements').delete().eq('id', statementId);
+      return NextResponse.json({ error: 'Failed to insert transactions to database: ' + txError.message }, { status: 500 });
     }
 
-    return NextResponse.json(dbData);
+    // Respond successfully
+    return NextResponse.json({ 
+      success: true, 
+      statementId, 
+      transactionCount: transactions.length 
+    });
+
   } catch (error: unknown) {
     console.error('Extraction error:', error);
     let message = 'Failed to process PDF';
