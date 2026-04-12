@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type DragEvent } from 'react';
-import { UploadCloud, Loader2 } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UploadZoneProps {
@@ -35,7 +35,7 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
       onUploadSuccess();
     } catch (error) {
       console.error(error);
-      const msg = error instanceof Error ? error.message : 'Failed to process image.';
+      const msg = error instanceof Error ? error.message : 'Failed to process PDF.';
       toast.error(msg);
     } finally {
       setIsUploading(false);
@@ -77,10 +77,10 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
     setIsDragging(false);
 
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file && file.type === 'application/pdf') {
       handleFile(file);
     } else {
-      toast.error('Please upload an image file (PNG or JPG).');
+      toast.error('Please upload a PDF e-statement.');
     }
   };
 
@@ -90,7 +90,7 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/jpg"
+        accept=".pdf,application/pdf"
         onChange={handleInputChange}
         className="hidden"
       />
@@ -109,24 +109,24 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
         {isUploading ? (
           <Loader2 className="h-10 w-10 text-muted-foreground animate-spin mb-4" />
         ) : (
-          <UploadCloud className="h-10 w-10 text-muted-foreground mb-4" />
+          <FileText className="h-10 w-10 text-muted-foreground mb-4" />
         )}
 
         {isUploading ? (
           <div className="space-y-1">
             <p className="text-sm font-medium">Extracting data...</p>
-            <p className="text-xs text-muted-foreground">Gemini 1.5 Flash is processing your document…</p>
+            <p className="text-xs text-muted-foreground">Parsing PDF e-statement…</p>
           </div>
         ) : isDragging ? (
-          <p className="text-sm font-medium">Drop the image here…</p>
+          <p className="text-sm font-medium">Drop the PDF here…</p>
         ) : (
           <div className="space-y-1">
-            <p className="text-sm font-medium">Drag & drop a screenshot</p>
+            <p className="text-sm font-medium">Drag & drop a PDF e-statement</p>
             <p className="text-xs text-muted-foreground">
               or <span className="text-primary underline underline-offset-2">click to browse</span>
             </p>
             <p className="text-xs text-muted-foreground pt-1">
-              Supports Bank Mandiri, BCA, ShopeePay, GoPay receipts (PNG/JPG)
+              Supports Bank Mandiri Credit Card Statements (PDF)
             </p>
           </div>
         )}
