@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const { data: transactions, error } = await query.abortSignal(controller.signal);
     clearTimeout(timeoutId);
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('abort')) {
-      return NextResponse.json({ error: 'Database request timed out.' }, { status: 504 });
+      return NextResponse.json({ error: 'Database request timed out (>25s). Check your Supabase connection.' }, { status: 504 });
     }
     return NextResponse.json({ error: message }, { status: 500 });
   }
