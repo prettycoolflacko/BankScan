@@ -25,9 +25,11 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. If the transactions table already existed (older setup), add the missing column:
+-- 3. If the transactions table already existed (older setup), add missing columns:
 ALTER TABLE transactions
   ADD COLUMN IF NOT EXISTS statement_id UUID REFERENCES statements(id) ON DELETE CASCADE;
+ALTER TABLE transactions
+  ADD COLUMN IF NOT EXISTS category TEXT;
 
 -- 4. Enable Row Level Security
 ALTER TABLE statements ENABLE ROW LEVEL SECURITY;

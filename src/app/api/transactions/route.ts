@@ -7,16 +7,19 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const statementId = searchParams.get('statement_id');
+    const limit = searchParams.get('limit');
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
 
     let query = supabaseServer
       .from('transactions')
       .select('*')
       .order('date', { ascending: false });
 
-    // Filter by statement if specified
-    if (statementId) {
-      query = query.eq('statement_id', statementId);
-    }
+    if (statementId) query = query.eq('statement_id', statementId);
+    if (from) query = query.gte('date', from);
+    if (to) query = query.lte('date', to);
+    if (limit) query = query.limit(parseInt(limit, 10));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);

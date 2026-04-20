@@ -260,7 +260,7 @@ export function TransactionList({ refreshTrigger, selectedStatementId, onDataCha
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-xl border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
